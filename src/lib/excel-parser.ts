@@ -199,6 +199,49 @@ export function processOrderData(
   let currentOrderNumber = ''
   let processedRowCount = 0
   
+  // Function to validate if a string looks like a Salesforce ID
+  function isValidSalesforceId(id: string): boolean {
+    if (!id) return false
+    const cleanId = id.trim()
+    // Salesforce IDs are 15 or 18 characters, alphanumeric, case-sensitive
+    return /^[a-zA-Z0-9]{15}$|^[a-zA-Z0-9]{18}$/.test(cleanId)
+  }
+  
+  // Function to find the best Order Summary ID candidate
+  function findOrderSummaryId(row: string[], orderSummaryColumnIndex: number): string {
+    // Check multiple potential columns for Order Summary ID
+    const candidates = []
+    
+    // Try column before Order Summary Number (common pattern)
+    if (orderSummaryColumnIndex > 0) {
+      candidates.push(row[orderSummaryColumnIndex - 1])
+    }
+    
+    // Try first column (sometimes Order Summary ID is in column 0)
+    if (row[0]) {
+      candidates.push(row[0])
+    }
+    
+    // Try column after Order Summary Number (alternative pattern)
+    if (orderSummaryColumnIndex + 1 < row.length) {
+      candidates.push(row[orderSummaryColumnIndex + 1])
+    }
+    
+    // Find the first valid Salesforce ID
+    for (const candidate of candidates) {
+      if (candidate && isValidSalesforceId(candidate.toString().trim())) {
+        return candidate.toString().trim()
+      }
+    }
+    
+    // If no valid ID found, return the original candidate (column before Order Summary Number)
+    if (orderSummaryColumnIndex > 0 && row[orderSummaryColumnIndex - 1]) {
+      return row[orderSummaryColumnIndex - 1].toString().trim()
+    }
+    
+    return ''
+  }
+  
   rows.forEach((row) => {
     // Ensure row has enough columns
     if (row.length <= Math.max(orderSummaryColumnIndex, fulfillmentLocationColumnIndex)) {
@@ -207,12 +250,7 @@ export function processOrderData(
     
     // Get Order Summary Number (main identifier)
     let orderSummaryNumber = row[orderSummaryColumnIndex]?.toString().trim()
-    let orderSummaryId = ''
-    
-    // If available, get Order Summary ID (usually column before Order Summary Number)
-    if (orderSummaryColumnIndex > 0) {
-      orderSummaryId = row[orderSummaryColumnIndex - 1]?.toString().trim() || ''
-    }
+    let orderSummaryId = findOrderSummaryId(row, orderSummaryColumnIndex)
     
     const fulfillmentLocation = row[fulfillmentLocationColumnIndex]?.toString().trim()
     
@@ -220,7 +258,7 @@ export function processOrderData(
     if (processedRowCount < 10) {
       console.log(`Processando linha ${processedRowCount + 1}:`)
       console.log(`  Número do Resumo do Pedido (col ${orderSummaryColumnIndex}): "${orderSummaryNumber}"`)
-      console.log(`  ID do Resumo do Pedido (col ${orderSummaryColumnIndex - 1}): "${orderSummaryId}"`)
+      console.log(`  ID do Resumo do Pedido: "${orderSummaryId}" (${isValidSalesforceId(orderSummaryId) ? 'VÁLIDO' : 'INVÁLIDO'})`)
       console.log(`  Local de Atendimento (col ${fulfillmentLocationColumnIndex}): "${fulfillmentLocation}"`)
     }
     
@@ -265,8 +303,8 @@ export function processOrderData(
         console.log(`  Pedido agora tem ${orderGroup.locations.size} localizações únicas`)
       }
       
-      // Update ID if we didn't have one before
-      if (!orderGroup.orderSummaryId && orderSummaryId) {
+      // Update ID if we have a better one
+      if (orderSummaryId && (isValidSalesforceId(orderSummaryId) || !orderGroup.orderSummaryId)) {
         orderGroup.orderSummaryId = orderSummaryId
       }
     } else {
@@ -280,16 +318,18 @@ export function processOrderData(
   
   console.log(`Encontrados ${orderGroups.size} pedidos únicos`)
   
-  // Debug: Show order statistics
+  // Debug: Show order statistics with ID validation
   const orderStats = Array.from(orderGroups.entries()).map(([orderNumber, group]) => ({
     orderNumber,
+    orderSummaryId: group.orderSummaryId,
+    isValidId: isValidSalesforceId(group.orderSummaryId),
     locationCount: group.locations.size,
     locations: Array.from(group.locations)
   }))
   
   console.log('Estatísticas dos pedidos:')
   orderStats.forEach(stat => {
-    console.log(`- ${stat.orderNumber}: ${stat.locationCount} localizações (${stat.locations.join(', ')})`)
+    console.log(`- ${stat.orderNumber} (ID: ${stat.orderSummaryId || 'N/A'} - ${stat.isValidId ? 'VÁLIDO' : 'INVÁLIDO'}): ${stat.locationCount} localizações (${stat.locations.join(', ')})`)
   })
   
   // Convert to ProcessedOrderData format

@@ -12,13 +12,42 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ChevronLeft, ChevronRight, Filter, MapPin, Package } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Filter, MapPin, Package, ExternalLink, AlertTriangle, Info } from 'lucide-react'
 import { type ProcessedOrderData } from '@/lib/excel-parser'
 
 interface AutoFilteredTableProps {
   orders: ProcessedOrderData[]
   headers: string[]
   fileName: string
+}
+
+// Function to validate Salesforce ID format
+function isValidSalesforceId(id: string): boolean {
+  if (!id) return false
+  // Salesforce IDs are 15 or 18 characters, alphanumeric
+  const cleanId = id.trim()
+  const isValid = /^[a-zA-Z0-9]{15}$|^[a-zA-Z0-9]{18}$/.test(cleanId)
+  console.log(`Validating Salesforce ID "${cleanId}": ${isValid}`)
+  return isValid
+}
+
+// Function to handle link clicks with error handling
+function handleSalesforceLink(orderSummaryId: string, orderSummaryNumber: string): void {
+  if (!isValidSalesforceId(orderSummaryId)) {
+    console.error(`ID do Salesforce inválido para pedido ${orderSummaryNumber}:`, orderSummaryId)
+    alert(`Erro: ID do Salesforce inválido para o pedido ${orderSummaryNumber}. Verifique se você tem acesso ao sistema.`)
+    return
+  }
+  
+  const url = `https://tramontinastore--dev.sandbox.lightning.force.com/lightning/r/OrderSummary/${orderSummaryId}/view`
+  console.log(`Abrindo link do Salesforce para pedido ${orderSummaryNumber}:`, url)
+  
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  } catch (error) {
+    console.error('Erro ao abrir link do Salesforce:', error)
+    alert('Erro ao abrir o link. Verifique se você tem acesso ao Salesforce ou se está conectado à VPN.')
+  }
 }
 
 export function AutoFilteredTable({ orders, headers, fileName }: AutoFilteredTableProps) {
@@ -31,6 +60,13 @@ export function AutoFilteredTable({ orders, headers, fileName }: AutoFilteredTab
     .filter(col => col.header !== '' && col.header !== null && col.header !== undefined)
 
   console.log('Meaningful columns:', meaningfulColumns)
+
+  // Debug: Check Salesforce ID validity for all orders
+  console.log('Validação de IDs do Salesforce:')
+  orders.forEach(order => {
+    const isValid = isValidSalesforceId(order.orderSummaryId)
+    console.log(`Pedido ${order.orderSummaryNumber}: ID "${order.orderSummaryId}" - ${isValid ? 'VÁLIDO' : 'INVÁLIDO'}`)
+  })
 
   if (!orders || orders.length === 0) {
     return (
@@ -97,48 +133,75 @@ export function AutoFilteredTable({ orders, headers, fileName }: AutoFilteredTab
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {orders.map((order, index) => (
-              <div key={index} className="border rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {order.orderSummaryId ? (
-                      <a
-                        href={`https://tramontinastore--dev.sandbox.lightning.force.com/lightning/r/OrderSummary/${order.orderSummaryId}/view`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
-                      >
-                        {order.orderSummaryNumber}
-                      </a>
-                    ) : (
-                      <h3 className="font-semibold text-lg">{order.orderSummaryNumber}</h3>
-                    )}
-                    {order.orderSummaryId && (
-                      <span className="text-sm text-muted-foreground">ID: {order.orderSummaryId}</span>
-                    )}
-                    <Badge variant="secondary">
-                      {order.fulfillmentCount} locais
-                    </Badge>
-                  </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">Locais de Atendimento:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {order.fulfillmentLocations.map((location, locIndex) => (
-                      <Badge key={locIndex} variant="outline" className="flex items-center gap-1">
-                        <MapPin className="h-3 w-3" />
-                        {location}
+            {orders.map((order, index) => {
+              const hasValidId = isValidSalesforceId(order.orderSummaryId)
+              return (
+                <div key={index} className="border rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {hasValidId ? (
+                        <button
+                          onClick={() => handleSalesforceLink(order.orderSummaryId, order.orderSummaryNumber)}
+                          className="font-semibold text-lg text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          {order.orderSummaryNumber}
+                          <ExternalLink className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-lg">{order.orderSummaryNumber}</h3>
+                          <span title="ID do Salesforce inválido - link não disponível">
+                            <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                          </span>
+                        </div>
+                      )}
+                      {order.orderSummaryId && (
+                        <span className="text-sm text-muted-foreground">
+                          ID: {order.orderSummaryId} {!hasValidId && '(inválido)'}
+                        </span>
+                      )}
+                      <Badge variant="secondary">
+                        {order.fulfillmentCount} locais
                       </Badge>
-                    ))}
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Locais de Atendimento:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {order.fulfillmentLocations.map((location, locIndex) => (
+                        <Badge key={locIndex} variant="outline" className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {location}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="text-sm text-muted-foreground">
+                    {order.relatedRows.length} linha{order.relatedRows.length !== 1 ? 's' : ''} no conjunto de dados
                   </div>
                 </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
-                <div className="text-sm text-muted-foreground">
-                  {order.relatedRows.length} linha{order.relatedRows.length !== 1 ? 's' : ''} no conjunto de dados
-                </div>
-              </div>
-            ))}
+      {/* Information Card about Salesforce Links */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-blue-800">
+            <Info className="h-5 w-5" />
+            Informações sobre Links do Salesforce
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-blue-700">
+          <div className="space-y-2">
+            <p><strong>✅ Links Funcionais:</strong> Pedidos com ícone <ExternalLink className="h-3 w-3 inline" /> abrem direto no Salesforce</p>
+            <p><strong>⚠️ Links Indisponíveis:</strong> Pedidos com ícone <AlertTriangle className="h-3 w-3 inline text-yellow-600" /> têm ID inválido</p>
+            <p><strong>🔒 Problemas de Acesso:</strong> Verifique se você está logado no Salesforce ou conectado à VPN da empresa</p>
+            <p><strong>🌐 Ambiente:</strong> Links direcionam para o ambiente <code>dev.sandbox</code> do Salesforce</p>
           </div>
         </CardContent>
       </Card>
@@ -172,27 +235,32 @@ export function AutoFilteredTable({ orders, headers, fileName }: AutoFilteredTab
                 <TableBody>
                   {currentRows.map((row, rowIndex) => {
                     const order = getOrderForRowIndex(rowIndex)
+                    const hasValidId = isValidSalesforceId(order.orderSummaryId)
                     return (
                       <TableRow key={startIndex + rowIndex}>
                         <TableCell className="font-medium">
                           <div className="space-y-1">
                             <div className="text-sm font-semibold">
-                              {order.orderSummaryId ? (
-                                <a
-                                  href={`https://tramontinastore--dev.sandbox.lightning.force.com/lightning/r/OrderSummary/${order.orderSummaryId}/view`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
+                              {hasValidId ? (
+                                <button
+                                  onClick={() => handleSalesforceLink(order.orderSummaryId, order.orderSummaryNumber)}
+                                  className="text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer flex items-center gap-1"
                                 >
                                   {order.orderSummaryNumber}
-                                </a>
+                                  <ExternalLink className="h-3 w-3" />
+                                </button>
                               ) : (
-                                order.orderSummaryNumber
+                                <div className="flex items-center gap-1">
+                                  {order.orderSummaryNumber}
+                                                                     <span title="ID do Salesforce inválido">
+                                     <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                                   </span>
+                                </div>
                               )}
                             </div>
                             {order.orderSummaryId && (
                               <div className="text-xs text-muted-foreground">
-                                ID: {order.orderSummaryId}
+                                ID: {order.orderSummaryId} {!hasValidId && '(inválido)'}
                               </div>
                             )}
                             <div className="flex flex-wrap gap-1">
